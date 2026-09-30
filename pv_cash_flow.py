@@ -1,22 +1,32 @@
 import streamlit as st
 import numpy_financial as npf
 import pandas as pd
+import io
 
-# Set page configuration with the specific app name
+# Set page configuration
 st.set_page_config(page_title="PV Cash Flow & Graphing", layout="wide", page_icon="☀️")
-st.title("☀️ PV Cash Flow & Graphing Dashboard")
 
-# --- SIDEBAR: RENEWABLE ASSET ASSUMPTIONS ---
+# --- SIDEBAR: PROJECT DETAILS & CURRENCY ---
+st.sidebar.header("Project Details")
+project_name = st.sidebar.text_input("Project Name", value="Solar Asset Alpha")
+currency_option = st.sidebar.selectbox("Currency", ["₹ (INR)", "$ (USD)", "€ (EUR)", "£ (GBP)"])
+sym = currency_option.split(" ")[0] # Extracts just the symbol (₹, $, etc.)
+
+# Update Title dynamically based on project name
+st.title(f"☀️ {project_name} - Cash Flow & Debt Service")
+
+# --- SIDEBAR: ASSET ASSUMPTIONS ---
 st.sidebar.header("Asset & Financing Inputs")
-initial_investment = st.sidebar.number_input("Total Capex / Asset PV ($)", value=1200000.0, step=25000.0)
-debt_principal = st.sidebar.number_input("Senior Debt Principal ($)", value=800000.0, step=25000.0)
-interest_rate = st.sidebar.number_input("Annual Interest Rate (%)", value=6.5) / 100
+# Scaled default values up slightly to be more realistic for INR
+initial_investment = st.sidebar.number_input(f"Total Capex / Asset PV ({sym})", value=10000000.0, step=100000.0)
+debt_principal = st.sidebar.number_input(f"Senior Debt Principal ({sym})", value=7000000.0, step=100000.0)
+interest_rate = st.sidebar.number_input("Annual Interest Rate (%)", value=8.5) / 100
 loan_term_years = st.sidebar.number_input("Tenor / Loan Term (Years)", value=7, step=1)
 
 st.sidebar.header("Operations & Solar Yield")
-base_annual_revenue = st.sidebar.number_input("Base Annual Revenue / PPA ($)", value=600000.0, step=10000.0)
+base_annual_revenue = st.sidebar.number_input(f"Base Annual Revenue / PPA ({sym})", value=2500000.0, step=50000.0)
 annual_growth_rate = st.sidebar.number_input("Escalation / Growth Rate (%)", value=2.5) / 100
-base_annual_opex = st.sidebar.number_input("Annual O&M / Opex ($)", value=150000.0, step=5000.0)
+base_annual_opex = st.sidebar.number_input(f"Annual O&M / Opex ({sym})", value=400000.0, step=10000.0)
 
 st.sidebar.subheader("Quarterly Solar Generation Profile")
 st.sidebar.caption("Adjust weights to reflect seasonal solar irradiance (averages ~1.0):")
@@ -76,7 +86,7 @@ average_dscr = total_cfads / total_debt_service if total_debt_service > 0 else 0
 col1, col2, col3 = st.columns(3)
 col1.metric("Project IRR (Annualized)", f"{annualized_irr * 100:.2f}%")
 col2.metric("Average DSCR", f"{average_dscr:.2f}x")
-col3.metric("5-Year Total CFADS", f"${total_cfads:,.0f}")
+col3.metric("5-Year Total CFADS", f"{sym}{total_cfads:,.0f}")
 
 st.divider()
 
@@ -86,12 +96,28 @@ chart_data = df.set_index("Quarter")[["Revenue (PPA)", "CFADS"]]
 st.bar_chart(chart_data)
 
 st.subheader("5-Year Quarterly Financial Waterfall")
+
+# Dynamically apply the selected currency symbol to the formatting
 format_dict = {
-    "Revenue (PPA)": "${:,.2f}", 
-    "O&M / Opex": "${:,.2f}", 
-    "CFADS": "${:,.2f}", 
-    "Debt Service": "${:,.2f}", 
-    "Net Cash Flow": "${:,.2f}", 
+    "Revenue (PPA)": f"{sym}{{:,.2f}}", 
+    "O&M / Opex": f"{sym}{{:,.2f}}", 
+    "CFADS": f"{sym}{{:,.2f}}", 
+    "Debt Service": f"{sym}{{:,.2f}}", 
+    "Net Cash Flow": f"{sym}{{:,.2f}}", 
     "DSCR": "{:.2f}x"
 }
 st.dataframe(df.style.format(format_dict), use_container_width=True)
+
+# --- EXCEL EXPORT ---
+# Convert dataframe to an Excel file in memory
+buffer = io.BytesIO()
+with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+    df.to_excel(writer, sheet_name='Cash Flow', index=False)
+
+# Add a download button at the bottom of the app
+st.download_button(
+    label=f"📥 Download {project_name} Calculations (Excel)",
+    data=buffer.getvalue(),
+    file_name=f"{project_name.replace(' ', '_')}_Cash_Flow.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
